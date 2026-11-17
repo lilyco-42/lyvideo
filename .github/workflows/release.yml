@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: macos-latest
+            platform: macos-arm64
+          - os: windows-latest
+            platform: windows-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Python build deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+      - name: Build wheel and sdist
+        run: python -m build --outdir dist
+      - name: Build web
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Package release (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release/${{ matrix.platform }}
+          zip -rq release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip README.md pyproject.toml lyvideo tests web/package.json web/package-lock.json web/next.config.mjs web/tailwind.config.ts web/postcss.config.mjs web/tsconfig.json web/src dist
+          cd release/${{ matrix.platform }}
+          shasum -a 256 *.zip > SHA256SUMS
+      - name: Package release (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release/${{ matrix.platform }} | Out-Null
+          $files = @("README.md","pyproject.toml","lyvideo","tests","web/package.json","web/package-lock.json","web/next.config.mjs","web/tailwind.config.ts","web/postcss.config.mjs","web/tsconfig.json","web/src","dist")
+          Compress-Archive -Path $files -DestinationPath release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip -Force
+          $hash = (Get-FileHash release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip" | Out-File -Encoding ascii release/${{ matrix.platform }}/SHA256SUMS
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/${{ matrix.platform }}/*.zip
+            release/${{ matrix.platform }}/SHA256SUMS
