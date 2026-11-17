@@ -27,6 +27,18 @@
 
 默认只做 dry-run 或人工确认；`xiaoliangliang/auto-publish` 等现成方案也采用“上传+填表、人工最终点击”，以降低账号安全和平台风控风险。
 
+## 人类易用性工作流
+
+Web UI 已改成“拖入视频 → 自动生成简体字幕成片 → 下载”的单页流程：
+
+1. `cd web && npm run dev`（默认 `http://localhost:3100`），或在生产构建后 `npm run start`。
+2. 在“添加字幕”页面把视频拖入虚线框，也可点击选择文件。
+3. 可选：同时拖入音频文件，或点击按钮选择背景音乐；设置“人声高于音乐 dB”。
+4. 点击“生成字幕视频”，页面显示 preparing / subtitles / burning 状态。
+5. 完成后点击“下载字幕视频”；后端会展示各流水线步骤结果。
+
+该流程通过 `web/src/app/api/subtitle-video/route.ts` 接收上传文件，写到临时目录，调用本地 `.venv/bin/python -m lyvideo.cli run`，并把生成的成片通过受控下载接口返回。适合本机或可信内网使用；公网部署时应加登录、限流、大小限制与任务清理。
+
 ## GitHub Release
 
 Push a version tag to publish multi-platform release assets via GitHub Actions:
