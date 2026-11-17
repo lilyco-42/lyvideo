@@ -32,8 +32,8 @@
 Push a version tag to publish multi-platform release assets via GitHub Actions:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 The public repository uses public GitHub Actions quotas. The release workflow builds on Linux, macOS and Windows runners and uploads per-platform zip archives plus SHA256SUMS to the GitHub Release.
