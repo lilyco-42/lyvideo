@@ -101,16 +101,18 @@ jobs:
           mkdir -p release/${{ matrix.platform }}
           zip -rq release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip README.md pyproject.toml lyvideo tests web/package.json web/package-lock.json web/next.config.mjs web/tailwind.config.ts web/postcss.config.mjs web/tsconfig.json web/src web/scripts web/.next/standalone dist
           cd release/${{ matrix.platform }}
-          shasum -a 256 *.zip > SHA256SUMS
+          shasum -a 256 *.zip > SHA256SUMS-${{ matrix.platform }}
       - name: Package release (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release/${{ matrix.platform }} | Out-Null
+          $zip = "release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip"
           $files = @("README.md","pyproject.toml","lyvideo","tests","web/package.json","web/package-lock.json","web/next.config.mjs","web/tailwind.config.ts","web/postcss.config.mjs","web/tsconfig.json","web/src","web/scripts","web/.next/standalone","dist")
-          Compress-Archive -Path $files -DestinationPath release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip -Force
-          $hash = (Get-FileHash release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip" | Out-File -Encoding ascii release/${{ matrix.platform }}/SHA256SUMS
+          tar.exe -a -c -f $zip $files
+          if ($LASTEXITCODE -ne 0) { throw "tar.exe failed: $LASTEXITCODE" }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $(Split-Path $zip -Leaf)" | Out-File -Encoding ascii "release/${{ matrix.platform }}/SHA256SUMS-${{ matrix.platform }}"
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
@@ -118,4 +120,24 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release/${{ matrix.platform }}/*.zip
-            release/${{ matrix.platform }}/SHA256SUMS
+            release/${{ matrix.platform }}/SHA256SUMS-*
+
+  finalize:
+    name: finalize checksums
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download release zips
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --pattern '*.zip' --dir release
+          cd release
+          sha256sum *.zip > SHA256SUMS
+          cat SHA256SUMS
+      - name: Upload aggregate SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" release/SHA256SUMS --repo "${GITHUB_REPOSITORY}" --clobber
