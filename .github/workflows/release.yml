@@ -47,13 +47,59 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Smoke standalone web (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd web
+          PORT=3199 HOSTNAME=127.0.0.1 node .next/standalone/server.js > /tmp/lyvideo-web.log 2>&1 &
+          echo $! > /tmp/lyvideo-web.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3199/api/subtitle-video/env > /tmp/lyvideo-env.json; then break; fi
+            sleep 1
+          done
+          kill "$(cat /tmp/lyvideo-web.pid)" 2>/dev/null || true
+          python - <<'PY'
+          import json
+          d = json.load(open('/tmp/lyvideo-env.json'))
+          print('platform', d.get('platform'), 'python', d.get('python', {}).get('source'), 'ready', d.get('ready'))
+          assert d.get('python', {}).get('ok'), d
+          assert d.get('ffmpeg') is not None
+          PY
+      - name: Smoke standalone web (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PORT = "3199"
+          $env:HOSTNAME = "127.0.0.1"
+          $stdout = Join-Path $env:TEMP "lyvideo-web-out.log"
+          $stderr = Join-Path $env:TEMP "lyvideo-web-err.log"
+          $p = Start-Process -FilePath "node" -ArgumentList ".next/standalone/server.js" -WorkingDirectory "web" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Start-Sleep -Seconds 3
+          $envJson = $null
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              $envJson = Invoke-RestMethod -Uri "http://127.0.0.1:3199/api/subtitle-video/env" -TimeoutSec 3
+              break
+            } catch {
+              Start-Sleep -Seconds 1
+            }
+          }
+          if ($null -eq $envJson) {
+            Get-Content $stdout, $stderr -ErrorAction SilentlyContinue
+            throw "standalone web did not start"
+          }
+          Stop-Process -Id $p.Id -Force
+          $envJson | ConvertTo-Json -Depth 5
+          if (-not $envJson.python.ok) { throw "python was not resolved" }
       - name: Package release (unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release/${{ matrix.platform }}
-          zip -rq release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip README.md pyproject.toml lyvideo tests web/package.json web/package-lock.json web/next.config.mjs web/tailwind.config.ts web/postcss.config.mjs web/tsconfig.json web/src dist
+          zip -rq release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip README.md pyproject.toml lyvideo tests web/package.json web/package-lock.json web/next.config.mjs web/tailwind.config.ts web/postcss.config.mjs web/tsconfig.json web/src web/scripts web/.next/standalone dist
           cd release/${{ matrix.platform }}
           shasum -a 256 *.zip > SHA256SUMS
       - name: Package release (windows)
@@ -61,7 +107,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release/${{ matrix.platform }} | Out-Null
-          $files = @("README.md","pyproject.toml","lyvideo","tests","web/package.json","web/package-lock.json","web/next.config.mjs","web/tailwind.config.ts","web/postcss.config.mjs","web/tsconfig.json","web/src","dist")
+          $files = @("README.md","pyproject.toml","lyvideo","tests","web/package.json","web/package-lock.json","web/next.config.mjs","web/tailwind.config.ts","web/postcss.config.mjs","web/tsconfig.json","web/src","web/scripts","web/.next/standalone","dist")
           Compress-Archive -Path $files -DestinationPath release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip -Force
           $hash = (Get-FileHash release/${{ matrix.platform }}/lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  lyvideo-${{ github.ref_name }}-${{ matrix.platform }}.zip" | Out-File -Encoding ascii release/${{ matrix.platform }}/SHA256SUMS

@@ -1,62 +1,44 @@
 import {NextRequest, NextResponse} from 'next/server';
-import {execFile} from 'node:child_process';
-import {promisify} from 'node:util';
-import {mkdtemp, writeFile, readFile, mkdir, stat} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import path from 'node:path';
+
+import {cancelJob, cleanupOld, startJob} from '@/lib/jobs';
+import {normalizeGain} from '@/lib/lyvideo-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const execFileAsync = promisify(execFile);
-
-function safeName(name: string): string {
-  const base = path.basename(name || 'upload').replace(/[^\w.\-\u4e00-\u9fff]/g, '_');
-  return base || 'upload';
-}
+export const maxDuration = 3600;
 
 export async function POST(req: NextRequest) {
-  let workdir = '';
+  let body: any;
   try {
-    const form = await req.formData();
-    const video = form.get('video');
-    if (!(video instanceof File) || video.size === 0) {
-      return NextResponse.json({detail: '缺少视频文件'}, {status: 400});
-    }
-    const music = form.get('music');
-    const gain = String(form.get('voice_gain_db') || '10');
-    workdir = await mkdtemp(path.join(tmpdir(), 'lyvideo-web-'));
-    const incoming = path.join(workdir, 'incoming');
-    const output = path.join(workdir, 'out');
-    await mkdir(incoming, {recursive: true});
-    await mkdir(output, {recursive: true});
-    const videoPath = path.join(incoming, safeName(video.name));
-    await writeFile(videoPath, Buffer.from(await video.arrayBuffer()));
-    const args = ['-m', 'lyvideo.cli', 'run', '--video', videoPath, '--workspace', output, '--voice-gain-db', gain];
-    if (music instanceof File && music.size > 0) {
-      const musicPath = path.join(incoming, safeName(music.name));
-      await writeFile(musicPath, Buffer.from(await music.arrayBuffer()));
-      args.push('--music', musicPath);
-    }
-    const repoRoot = process.cwd();
-    const python = path.join(repoRoot, '..', '.venv', 'bin', 'python');
-    const {stdout} = await execFileAsync(python, args, {
-      cwd: path.join(repoRoot, '..'),
-      maxBuffer: 8 * 1024 * 1024,
-      timeout: 30 * 60 * 1000,
-      env: {...process.env, PYTHONPATH: repoRoot, HOME: process.env.HOME || '/home/lilyco'},
+    body = await req.json();
+  } catch {
+    return NextResponse.json({detail: '无效的 JSON 请求'}, {status: 400});
+  }
+  const videoUploadId = String(body?.video_upload_id || '');
+  if (!videoUploadId) {
+    return NextResponse.json({detail: '缺少 video_upload_id'}, {status: 400});
+  }
+  try {
+    const job = await startJob({
+      videoUploadId,
+      musicUploadId: body?.music_upload_id ? String(body.music_upload_id) : null,
+      voiceGainDb: normalizeGain(body?.voice_gain_db),
+      outputName: body?.output_name ? String(body.output_name) : null,
     });
-    const result = JSON.parse(stdout.trim());
-    const finalPath = result?.final_video || '';
-    if (!finalPath || !path.isAbsolute(finalPath) || !finalPath.startsWith(output)) {
-      return NextResponse.json({ok: false, detail: '未生成字幕视频', events: (result?.steps || []).map((s: any) => s.name)}, {status: 500});
-    }
-    const filename = 'lyvideo-subtitled-' + Date.now() + path.extname(finalPath);
-    const downloadUrl = '/api/subtitle-video/download?file=' + encodeURIComponent(finalPath);
-    return NextResponse.json({...result, download_filename: filename, download_url: downloadUrl});
+    await cleanupOld();
+    return NextResponse.json({
+      id: job.id,
+      state: job.state,
+      download_name: job.downloadName,
+    });
   } catch (e: any) {
-    const detail = String(e?.stderr || e?.message || e || '处理失败').slice(-4000);
-    return NextResponse.json({ok: false, detail}, {status: 500});
+    return NextResponse.json({detail: String(e?.message || e).slice(0, 1000)}, {status: 500});
   }
 }
 
+export async function DELETE(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get('id') || '';
+  const ok = await cancelJob(id);
+  if (!ok) return NextResponse.json({detail: '任务不存在'}, {status: 404});
+  return NextResponse.json({ok: true});
+}

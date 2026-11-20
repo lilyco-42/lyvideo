@@ -4,10 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lyvideo"
-version = "0.1.1"
+version = "0.2.0"
 description = "AI video pipeline: editing, ASR, simplified Chinese subtitles, rendering and publishing adapters"
 requires-python = ">=3.11"
-dependencies = ["mcp", "pydantic", "fastapi", "uvicorn"]
+dependencies = [
+    "mcp",
+    "pydantic",
+    "fastapi",
+    "uvicorn",
+    "numpy>=1.26",
+    "faster-whisper>=1.1.0",
+    "opencc-python-reimplemented>=0.1.7",
+]
 
 [project.scripts]
 lyvideo = "lyvideo.cli:main"

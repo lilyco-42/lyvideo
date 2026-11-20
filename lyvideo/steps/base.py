@@ -4,7 +4,10 @@ from pathlib import Path
 from ..models import StepResult
 
 def run_cmd(cmd: list[str], cwd: str | None = None) -> tuple[int, str]:
-    p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    p = subprocess.run(
+        cmd, cwd=cwd, text=True, capture_output=True,
+        encoding='utf-8', errors='replace',
+    )
     out = (p.stdout or '') + ('\n' + p.stderr if p.stderr else '')
     return p.returncode, out.strip()
 
