@@ -101,8 +101,8 @@ Chrome / Edge、Firefox、Safari 16+；桌面与手机浏览器均可。上传�
 Push a version tag to publish multi-platform release assets via GitHub Actions:
 
 ```bash
-git tag v0.2.2
-git push origin v0.2.2
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
 Release 包内包含预构建的 `web/.next/standalone`（已带静态资源）。解压后先安装 Python 依赖，再从项目根目录启动：
