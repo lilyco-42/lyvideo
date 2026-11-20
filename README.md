@@ -116,3 +116,27 @@ node web/.next/standalone/server.js # 默认 3000；可加 PORT=3100
 如果从其它目录启动，设置 `LYVIDEO_PROJECT_ROOT` 指向解压后的项目根目录。
 
 The public repository uses public GitHub Actions quotas. The release workflow builds on Linux, macOS and Windows runners, runs standalone web smoke (Python/ffmpeg detection) and uploads per-platform zip archives plus SHA256SUMS to the GitHub Release.
+
+## lyco 原始需求对照（评论弹幕 / OCR / 工作流）
+
+本项目从原始 lyco 视频需求收敛而来。当前主流水线覆盖“视频处理 → 混音 → ASR 简体字幕 → 烧录 → dry-run/manual 发布 → Web UI → CI/Release”。原始需求中的评论弹幕和视频文字识别由早期的独立原型验证，未合并进当前 `lyvideo` 主包。
+
+### 已完成原型位置
+
+- 评论抓取与 Remotion 弹幕原型：`../lilyco-video-tool/`
+  - `scripts/fetch_comments.py`
+  - `data/comments.json`
+  - `src/DanmakuVideo.tsx`
+  - `out/final.mp4`（含 BGM、简体字幕、评论弹幕的 111 秒成片）
+- 视频文字 OCR 原型：`../lilyco-video-tool/scripts/ocr_video.py`，输出 `data/ocr.txt`
+- 当前 `lyvideo` 不含弹幕/OCR 步骤；如需要，应按主流水线风格新增独立 step，并用 CLI/MCP/Web 暴露，而不是把原型脚本直接塞进 UI。
+
+### 发布边界
+
+默认发布适配器只有 `dryrun` 与 `manual`。真实平台自动发布、fork/new repo/tag/release 等操作，必须按用户明确授权执行；GitHub Release 已在本仓库获得授权并已配置公开 Actions 额度。
+
+### 原始样例
+
+- 视频：`/home/lilyco/下载/(广东共青团)最新，武汉不明原因肺炎病原体为新型冠状病毒_Auto.mp4`
+- 音乐：`/home/lilyco/音乐/开往春天的地铁（热播） - 动词does、文曦.mp3`
+- 成片：`/home/lilyco/下载/lilyco_final_with_danmaku.mp4`
